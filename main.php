@@ -19,7 +19,6 @@ class hykwEasyImageCompressClass
     $this->retValueOnError = $retValueOnError;
   }
 
-
   /**
    * convert 画像変換
    * 
@@ -27,41 +26,99 @@ class hykwEasyImageCompressClass
    */
   public function convert()
   {
-    ### OS上のパスの取得
-    $wp_upload_dirs = wp_upload_dir();
-    $wp_upload_basedir = $wp_upload_dirs['basedir'];  # /var/www/wp/wordpress/wp-content/uploads
-    $wp_upload_baseurl = $wp_upload_dirs['baseurl'];  # http://example.co.jp/wp-content/uploadso
+    try {
+      ### URLを分割
+      # ['2015/05', 'test.png']
+      $work = $this->splitURL_to_subdirAndFilename($this->url);
+      if ($work == FALSE)
+        throw new Exception();
 
-    list($upload_basedir, $upload_yearmonth, $org_name) = $this->get_thumbnail_basedirANDpath($wp_upload_basedir, $this->url);
-    /* array(
-        /var/www/wp/wordpress/wp-content/uploads
-        2015/05
-        test.png
-       )
-     */
+      list($subdir, $thumbnail_filename) = $work;
 
 
-    ### 生成後のファイル名の取得(foo.png -> foo【suffix】.png)
-    list($base, $ext_filename) = $this->get_thumbnail_built_name($org_name, $this->suffix);
-    $new_name = sprintf('%s.%s', $base, $ext_filename);
+      ### 生成するファイル名を取得
+      # 'foo.png' -> ['foo_xxxx_', 'png']
+      $work = $this->get_build_fileinfo($thumbnail_filename, $this->suffix);
+      if ($work == FALSE)
+        throw new Exception();
+
+      list($thumbnail_new_basefile, $thumbnail_ext) = $work;
 
 
-    ### 画像を生成
-    $upload_basdirAndYearMonth = sprintf('%s/%s', $upload_basedir, $upload_yearmonth);
-    if ($this->build_img($upload_basdirAndYearMonth, $org_name, $new_name, $ext_filename, $this->width, $this->height)) {
-      # 画像のパスを差し替え
-      $new_thumbnail = sprintf('%s/%s/%s', $wp_upload_baseurl, $upload_yearmonth, $new_name);
+      ### 各種パスの取得
+      $wp_upload_dirs = wp_upload_dir();
+      $wp_upload_basedir = $wp_upload_dirs['basedir'];  # /var/www/wp/wordpress/wp-content/uploads
+      $wp_upload_baseurl = $wp_upload_dirs['baseurl'];  # http://example.co.jp/wp-content/uploads
 
-      return $new_thumbnail;
+
+      ### 画像を生成
+      $basedir = sprintf('%s/%s', $wp_upload_basedir, $subdir);
+      $thumbnail_new_filename = sprintf('%s.%s', $thumbnail_new_basefile, $thumbnail_ext);
+      if ($this->build_img($basedir, $thumbnail_filename, $thumbnail_new_filename, $thumbnail_ext, $this->width, $this->height)) {
+
+        # 正常に生成できたので、生成後のURLを返す
+        $ret = sprintf('%s/%s/%s.%s', $wp_upload_baseurl, $subdir, $thumbnail_new_basefile, $thumbnail_ext);
+        return $ret;
+      }
+
+    } catch (Exception $e) {
+      # エラー時対応
+      if ($this->retValueOnError)
+        return $this->url;
+      else
+        return $this->retValueOnError;
     }
-
-    # error
-    if ($this->retValueOnError)
-      return $this->url;
-    else
-      return $this->retValueOnError;
-
   }
+
+  ##################################################
+  /**
+   * splitURL_to_subdirAndFilename URLからsubdir と ファイル名を分割して返す
+   * 
+   * @param string $url 
+   * @return array [subdir, filename] 不正なURLの場合、FALSE
+   */
+  function splitURL_to_subdirAndFilename($url)
+  {
+    if (!preg_match('/wp-content\/uploads\/(.*)/', $url, $match))
+      return FALSE;
+
+    $path = $match[1];
+    $split_path = explode('/', $path);
+
+    $end = array_pop($split_path);
+    $ret = array(
+      implode('/', $split_path),
+      $end,
+    );
+
+    return $ret;
+  }
+
+
+  /**
+   * get_build_fileinfo 生成するファイル名と拡張子を返す
+   * 
+   * @param mixed $filename 
+   * @param mixed $suffix 
+   * @return array [basefile名, 拡張子] 変な値の場合 FALSE
+   */
+  function get_build_fileinfo($filename, $suffix)
+  {
+    $work = explode('.', $filename);
+    # 空もしくは拡張子無し
+    if (count($work) <= 1)
+      return FALSE;
+
+    $ext = array_pop($work);
+    $base = implode('.', $work);
+
+    $ret = array(
+      sprintf('%s%s', $base, $suffix),
+      $ext);
+
+    return $ret;
+  }
+
 
   /**
    * build_img 画像を生成
@@ -129,63 +186,12 @@ class hykwEasyImageCompressClass
     return TRUE;
   }
 
-
-
-  /**
-   * get_thumbnail_built_name 自動生成した画像のファイル名を返す
-   * 
-   * @param string $org_name
-   * @param string $suffix
-   * @return string
-   */
-  function get_thumbnail_built_name($org_name, $suffix)
-  {
-    $work = explode('.', $org_name);
-    $ext = array_pop($work);
-    $base = implode('.', $work);
-
-    $ret = array(
-      sprintf('%s%s', $base, $suffix),
-      $ext);
-
-    return $ret;
-  }
-
-
-  /**
-   * get_thumbnail_basedirANDpath 指定URLから、OS上のbasedirとファイルパスを返す
-   *
-   * @param string $wp_upload_basedir(e.g. /var/www/wp/wordpress/wp-content/uploads)
-   * @param string $thumbnail_url URL(例：http://example.co.jp/wp-content/uploads/2015/05/test.png)
-   * @return array パス(例：
-   array(
-     '/var/www/wp/wp-content/uploads',
-     '2015/05',
-     'test.png'
-   )
-   *         エラー時は array('', '', '')
-   */
-  function get_thumbnail_basedirANDpath($wp_upload_basedir, $thumbnail_url)
-  {
-    if (!preg_match('/wp-content\/uploads\/(.*)/', $thumbnail_url, $match))
-      return array('', '', '');
-
-    $path = $match[1];
-    $split_path = explode('/', $path);
-
-    $ret = array();
-    array_push($ret, $wp_upload_basedir);
-    array_push($ret, sprintf('%s/%s', $split_path[0], $split_path[1]));
-    array_push($ret, $split_path[2]);
-
-    return $ret;
-  }
-
 }
 
+##################################################
 
 /**
- * hykwEasyImageCompress 
+ * hykwEasyImageCompress
  * 
  * @param string $url 変換元画像のURL(例：'http://example.co.jp/wp-content/uploads/2015/05/foo.png')
  * @param string $suffix 変換後の画像のbaseファイル名につけるsuffix(例：'_auto_' の場合、foo_auto_png とかになる）
