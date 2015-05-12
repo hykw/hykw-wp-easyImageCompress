@@ -50,7 +50,6 @@ class hykwEasyImageCompressClass
       $wp_upload_basedir = $wp_upload_dirs['basedir'];  # /var/www/wp/wordpress/wp-content/uploads
       $wp_upload_baseurl = $wp_upload_dirs['baseurl'];  # http://example.co.jp/wp-content/uploads
 
-
       ### 画像を生成
       $basedir = sprintf('%s/%s', $wp_upload_basedir, $subdir);
       $thumbnail_new_filename = sprintf('%s.%s', $thumbnail_new_basefile, $thumbnail_ext);
@@ -59,6 +58,8 @@ class hykwEasyImageCompressClass
         # 正常に生成できたので、生成後のURLを返す
         $ret = sprintf('%s/%s/%s.%s', $wp_upload_baseurl, $subdir, $thumbnail_new_basefile, $thumbnail_ext);
         return $ret;
+      } else {
+        throw new Exception();
       }
 
     } catch (Exception $e) {
